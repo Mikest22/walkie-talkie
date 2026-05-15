@@ -172,10 +172,9 @@ Mantén presionado HABLAR y suelta para dejar de transmitir.
 
 let peer;
 let conn;
-let currentCall;
+let mediaCall;
 let localStream;
 let remotePeerId="";
-let talking=false;
 
 const myId=document.getElementById("myId");
 const remoteId=document.getElementById("remoteId");
@@ -183,230 +182,137 @@ const talkBtn=document.getElementById("talkBtn");
 const statusDiv=document.getElementById("status");
 const remoteAudio=document.getElementById("remoteAudio");
 
-function setStatus(text){
-  statusDiv.innerText=text;
+function setStatus(txt){
+ statusDiv.innerText=txt;
+}
+
+async function initMic(){
+
+ if(localStream) return;
+
+ localStream=await navigator.mediaDevices.getUserMedia({
+   audio:{
+    echoCancellation:true,
+    noiseSuppression:true,
+    autoGainControl:true
+   }
+ });
+
+ // inicia silenciado
+ localStream.getAudioTracks()[0].enabled=false;
+
 }
 
 peer=new Peer();
 
 peer.on("open",(id)=>{
-
-  myId.value=id;
-
-  setStatus("Listo. Comparte tu ID con el otro celular.");
-
-});
-
-peer.on("connection",(connection)=>{
-
-  conn=connection;
-
-  remotePeerId=connection.peer;
-
-  setStatus("Conectado.");
-
-  conn.on("data",(data)=>{
-
-    if(data.type==="start"){
-
-      setStatus("Recibiendo audio...");
-
-    }
-
-    if(data.type==="stop"){
-
-      setStatus("Conectado.");
-
-    }
-
-  });
-
+ myId.value=id;
+ setStatus("Listo.");
 });
 
 peer.on("call",(call)=>{
 
-  navigator.mediaDevices.getUserMedia({
-    audio:true
-  })
-  .then((stream)=>{
+ call.answer(localStream);
 
-    call.answer(stream);
+ call.on("stream",(remoteStream)=>{
 
-    call.on("stream",(remoteStream)=>{
+   remoteAudio.srcObject=remoteStream;
 
-      remoteAudio.srcObject=remoteStream;
+   remoteAudio.play().catch(()=>{});
 
-      remoteAudio.play();
+   setStatus("Conectado.");
 
-    });
-
-  })
-  .catch(()=>{
-
-    setStatus("Debes permitir el micrófono.");
-
-  });
+ });
 
 });
 
 peer.on("error",(err)=>{
 
-  setStatus("Error: "+err.type);
+ setStatus("Error: "+err.type);
 
 });
 
-function connectPeer(){
+async function connectPeer(){
 
-  remotePeerId=remoteId.value.trim();
+ try{
 
-  if(!remotePeerId){
+   remotePeerId=remoteId.value.trim();
 
-    setStatus("Pega primero el ID del otro celular.");
-
+   if(!remotePeerId){
+    setStatus("Pega el ID.");
     return;
+   }
 
-  }
+   await initMic();
 
-  conn=peer.connect(remotePeerId);
+   conn=peer.connect(remotePeerId);
 
-  conn.on("open",()=>{
+   conn.on("open",()=>{
 
-    setStatus("Conectado. Ya puedes hablar.");
+      mediaCall=
+      peer.call(
+       remotePeerId,
+       localStream
+      );
 
-  });
+      setStatus("Conectado.");
+
+   });
+
+ }catch(e){
+
+   setStatus("Error de micrófono.");
+
+ }
 
 }
 
-async function startTalking(){
+function startTalking(){
 
-  if(talking)return;
+ if(!localStream) return;
 
-  if(!remotePeerId){
+ localStream
+ .getAudioTracks()[0]
+ .enabled=true;
 
-    setStatus("Primero conéctate con otro celular.");
-
-    return;
-
-  }
-
-  talking=true;
-
-  setStatus("Transmitiendo...");
-
-  try{
-
-    localStream=
-    await navigator.mediaDevices.getUserMedia({
-
-      audio:{
-        echoCancellation:true,
-        noiseSuppression:true,
-        autoGainControl:true
-      }
-
-    });
-
-    currentCall=
-    peer.call(remotePeerId,localStream);
-
-    if(conn&&conn.open){
-
-      conn.send({
-        type:"start"
-      });
-
-    }
-
-  }catch{
-
-    talking=false;
-
-    setStatus("No se pudo activar el micrófono.");
-
-  }
+ setStatus("Transmitiendo...");
 
 }
 
 function stopTalking(){
 
-  if(!talking)return;
+ if(!localStream) return;
 
-  talking=false;
+ localStream
+ .getAudioTracks()[0]
+ .enabled=false;
 
-  setStatus("Conectado.");
-
-  if(conn&&conn.open){
-
-    conn.send({
-      type:"stop"
-    });
-
-  }
-
-  if(currentCall){
-
-    currentCall.close();
-
-    currentCall=null;
-
-  }
-
-  if(localStream){
-
-    localStream.getTracks()
-    .forEach(track=>track.stop());
-
-    localStream=null;
-
-  }
+ setStatus("Conectado.");
 
 }
 
 async function copyMyId(){
 
-  try{
+ await navigator.clipboard.writeText(
+  myId.value
+ );
 
-    await navigator.clipboard.writeText(
-      myId.value
-    );
-
-    setStatus("ID copiado.");
-
-  }catch{
-
-    myId.select();
-
-    document.execCommand("copy");
-
-    setStatus("ID copiado.");
-
-  }
+ setStatus("ID copiado.");
 
 }
 
-talkBtn.addEventListener("touchstart",(e)=>{
-
+talkBtn.addEventListener(
+ "touchstart",
+ (e)=>{
   e.preventDefault();
-
   startTalking();
+ });
 
-});
-
-talkBtn.addEventListener("touchend",(e)=>{
-
+talkBtn.addEventListener(
+ "touchend",
+ (e)=>{
   e.preventDefault();
-
   stopTalking();
-
-});
-
-talkBtn.addEventListener("mousedown",startTalking);
-
-talkBtn.addEventListener("mouseup",stopTalking);
-
-talkBtn.addEventListener("mouseleave",stopTalking);
+ });
 
 </script>
-
-</body>
-</html>
